@@ -258,12 +258,15 @@ class FixService {
     // NEW OPTIMIZED PROMPT:
     const systemPrompt = `Expert Debugger. Fix ${issue.issueType} issue. Return ONLY COMPLETE FIXED CODE. No chat. No markdown.`;
 
-    const userPrompt = `File: ${issue.filePath}
+    const userPrompt = `You are a world-class security engineer. Fix the following ${issue.issueType} issue.
+File: ${issue.filePath}
 Issue: ${issue.title}
 Description: ${issue.description}
-Fix: ${issue.suggestedFix}
+Fix Guidance: ${issue.suggestedFix}
 
-CODE:
+CRITICAL: Return ONLY the complete, corrected source code for the file. No explanations, no markdown fences unless necessary for the code itself.
+
+CODE TO FIX:
 ${originalContent}`;
 
     try {
@@ -290,9 +293,9 @@ ${originalContent}`;
             systemPrompt,
             userPrompt,
             {
-              model: "gemini-2.5-flash",
-              temperature: 0.2,
-              maxTokens: 2000,
+              model: "gemini-2.0-flash",
+              temperature: 0.1,
+              maxTokens: 4000,
             }
           );
           fixedContent = response.text.trim();
@@ -303,9 +306,9 @@ ${originalContent}`;
           systemPrompt,
           userPrompt,
           {
-            model: "gemini-2.5-flash",
-            temperature: 0.2,
-            maxTokens: 2000,
+            model: "gemini-2.0-flash",
+            temperature: 0.1,
+            maxTokens: 4000,
           }
         );
         fixedContent = response.text.trim();

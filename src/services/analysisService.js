@@ -473,34 +473,33 @@ RULES:
     */
 
     // NEW OPTIMIZED PROMPTS (Minimizing tokens and respecting limit):
-    const systemPrompt = `Expert Security & DevOps Engineer. Analyze code for:
-1. SECURITY (CRITICAL): Auth bypass, Injection, Secrets.
-2. API SECURITY: Broken access control, missing auth, improper methods.
-3. PEN-TEST ADVISORY: Attack surfaces, insecure endpoints, testing strategies.
-4. DEPENDENCY RISKS: Logic-level CVE awareness.
-5. QUALITY/BUGS: Critical logic errors.
+    const systemPrompt = `Expert Security Researcher & Senior DevOps Engineer. You are tasked with performing a deep technical audit of source code.
+YOUR GOAL: Identify vulnerabilities, logic flaws, API security risks, and technical debt.
+BE CRITICAL: No codebase is perfect. Most have hidden flaws in auth logic, input validation, or dependency usage.
+CATEGORIES:
+1. SECURITY: Auth bypass, SQLi, XSS, SSRF, hardcoded secrets.
+2. API SECURITY: Broken object-level authorization, missing rate limiting, insecure methods.
+3. PEN-TEST: Identify specific attack vectors and explain how a security researcher would test them safely.
+4. DEPENDENCY: High-risk usage of libraries.
+5. CODE QUALITY: Critical bugs only.
 
-Reply in STRICT JSON. Be critical. Kendra advises/orchestrates but DOES NOT ATTACK.`;
+Reply in STRICT JSON.`;
 
-    const userPrompt = `Analyze ${repository.repoOwner}/${repository.repoName} (${repository.language || "code"}).
+    const userPrompt = `Perform a comprehensive security and quality analysis on ${repository.repoOwner}/${repository.repoName} (${repository.language || "code"}).
 
 Files context:
 ${filesContext.map((f, i) => `[${i+1}] ${f.path}${f.truncated ? " (truncated)" : ""}:\n${f.content}`).join("\n---\n")}
 
-TASK: Identify up to ${Math.min(issueLimit, 5)} issues. CATEGORIZE AS:
-- 'api-security': Missing auth, improper HTTP usage, broken access control.
-- 'pen-test': Attack surfaces, endpoint vulnerability, strategizing WITHOUT exploiting.
-- 'dependency': Logic-level third-party risks.
-- 'security': General/Critical flaws.
-- 'bug' / 'code-quality': Critical only.
+TASK: Identify at least 3-5 critical issues if they exist. You MUST be technical and specific.
+Categorize issues into: 'api-security', 'pen-test', 'dependency', 'security', 'bug', 'code-quality'.
 
 Schema: {"issues": [{"title":string,"description":string,"issueType":"security"|"bug"|"api-security"|"pen-test"|"dependency"|"performance"|"code-quality","severity":"CRITICAL"|"HIGH"|"MEDIUM"|"LOW","filePath":string,"lineNumber":number,"codeSnippet":string,"aiConfidence":number,"aiExplanation":string,"suggestedFix":string}]}
 
 RULES:
-- Limit to ${Math.min(issueLimit, 5)} issues.
-- Be extremely specific about API endpoints and attack vectors.
-- For 'pen-test', focus on HOW to test safely.
-- Concise descriptions. Valid JSON ONLY.`;
+- Find the most impactful issues (Prioritize CRITICAL/HIGH).
+- For 'pen-test' issues, provide a clear technical hypothesis on the vulnerability.
+- DO NOT be conservative. If code looks suspicious, flag it with lower confidence but higher detail.
+- Valid JSON ONLY.`;
 
     try {
       let response;
@@ -571,12 +570,11 @@ RULES:
       const issues = parsedContent.issues || [];
 
       if (issues.length === 0) {
-        console.error("⚠️ Gemini returned 0 issues");
-        console.error("Full response:", JSON.stringify(parsedContent, null, 2));
+        console.warn(`⚠️ ${serviceUsed} returned 0 issues for this batch`);
         return [];
       }
 
-      console.log(`🤖 ${serviceUsed} found ${issues.length} issues in this batch`);
+      console.log(`🤖 ${serviceUsed} reported ${issues.length} potential issues`);
 
       const validIssues = issues.filter((issue) => {
         const hasRequired =

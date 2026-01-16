@@ -133,7 +133,7 @@ class GeminiService {
     }
 
     const operation = async () => {
-      const modelName = options.model || "gemini-2.5-flash";
+      const modelName = options.model || "gemini-2.0-flash";
       
       const maxTokens = options.maxTokens || 16000; 
 
@@ -214,7 +214,7 @@ class GeminiService {
   async generateFix(systemPrompt, userPrompt, options = {}) {
     return await this.analyzeCode(systemPrompt, userPrompt, {
       ...options,
-      model: options.model || "gemini-2.5-flash",
+      model: options.model || "gemini-2.0-flash",
       temperature: 0.2,
       maxTokens: 8000,
     });
@@ -290,8 +290,8 @@ class GeminiService {
 
   getModelInfo() {
     return {
-      analysis: "gemini-2.5-flash",
-      fix: "gemini-2.5-flash",
+      analysis: "gemini-2.0-flash",
+      fix: "gemini-2.0-flash",
       keysAvailable: this.keyStatus.filter((k) => k.available).length,
       totalKeys: this.apiKeys.length,
     };

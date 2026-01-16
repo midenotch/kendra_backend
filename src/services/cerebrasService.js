@@ -120,8 +120,8 @@ const Cerebras = require('@cerebras/cerebras_cloud_sdk');
 // Configurable constants – tweak them in one place.
 // ---------------------------------------------------------------------------
 const MAX_RETRIES = 3;
-const BASE_RETRY_DELAY_MS = 2000; // exponential back‑off multiplier
-const REQUEST_TIMEOUT_MS = 30_000; // 30 seconds – matches your original constant
+const BASE_RETRY_DELAY_MS = 2000;
+const REQUEST_TIMEOUT_MS = 30_000; 
 
 // ---------------------------------------------------------------------------
 // Helper: simple sleep (ms)
@@ -135,7 +135,6 @@ class CerebrasService {
   constructor() {
     /** @type {import('@cerebras/cerebras_cloud_sdk').Cerebras | null} */
     this.client = null;
-    /** Holds the original init error (if any) for better debugging */
     this.initError = null;
   }
 
@@ -264,15 +263,26 @@ class CerebrasService {
   extractJSON(text) {
     if (!text) throw new Error('Empty response – cannot extract JSON');
 
-
+    // 1️⃣ Attempt to extract JSON from markdown fences (handles ```json, ```js, etc.)
+    const fencedMatch = text.match(/```(?:\w+)?\s*([\s\S]*?)```/);
     const candidate = fencedMatch ? fencedMatch[1] : text;
 
     const cleaned = candidate.trim();
 
     try {
+      // 2️⃣ Attempt direct parse
       return JSON.parse(cleaned);
     } catch (parseError) {
-      console.warn('❗ First JSON parse failed – falling back to substring extraction', parseError.message);
+      // 3️⃣ Attempt cleanup parse (removing control characters and trailing commas)
+      try {
+        const sanitized = cleaned
+          .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") 
+          .replace(/,\s*}/g, "}") 
+          .replace(/,\s*\]/g, "]"); 
+        return JSON.parse(sanitized);
+      } catch (sanitizedError) {
+        console.warn('❗ Sanitized JSON parse failed – attempting substring extraction');
+      }
     }
 
     // 4️⃣ Fallback: locate the first `{` and the last `}` and slice.
@@ -283,13 +293,24 @@ class CerebrasService {
       try {
         return JSON.parse(substring);
       } catch (innerError) {
-        console.error('❌ Fallback JSON parse still failed:', innerError.message);
-        throw new Error('Could not parse JSON from Cerebras response');
+        // 5️⃣ Final Salvage Attempt: Try to close a partial issues array
+        try {
+          const partialMatch = cleaned.match(/"issues"\s*:\s*\[([\s\S]*)/);
+          if (partialMatch) {
+            let salvaged = '{"issues":[' + partialMatch[1];
+            const lastComma = salvaged.lastIndexOf(',');
+            if (lastComma > 0) salvaged = salvaged.substring(0, lastComma);
+            if (!salvaged.endsWith(']}')) salvaged += ']}';
+            return JSON.parse(salvaged);
+          }
+        } catch (salvageErr) {
+          console.error('❌ JSON salvage failed:', salvageErr.message);
+        }
+        throw new Error('Could not parse JSON from Cerebras response after multiple attempts');
       }
     }
 
-    // 5️⃣ If we get here, give up with a helpful error.
-    throw new Error('Unable to locate a JSON payload in the LLM response');
+    throw new Error('Unable to locate a JSON payload (expected {...}) in the LLM response');
   }
 }
 
