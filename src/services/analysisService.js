@@ -40,6 +40,7 @@ class AnalysisService {
    * Analyze a repository for issues
    */
   async analyzeRepository(repositoryId, userId) {
+    const startTime = Date.now();
     try {
       console.log(`🔍 Starting analysis for repository: ${repositoryId}`);
 
@@ -72,10 +73,18 @@ class AnalysisService {
       // Step 2: Filter and prioritize files
       const filesToAnalyze = this.filterFiles(files);
       console.log(`🎯 Selected ${filesToAnalyze.length} files for analysis`);
-      console.log(
-        `📄 Files to analyze:`,
-        filesToAnalyze.map((f) => f.path).join(", ")
-      );
+
+      // Step 2.5: Fetch Project Manifest for Context
+      let projectManifest = "";
+      try {
+        const manifestFile = files.find(f => f.name === "package.json" || f.name === "requirements.txt" || f.name === "go.mod");
+        if (manifestFile) {
+          const contentObj = await this.getFileContent(repository.repoOwner, repository.repoName, manifestFile.path, user.githubAccessToken);
+          if (contentObj) projectManifest = `[MANIFEST: ${manifestFile.name}]\n${contentObj.content}`;
+        }
+      } catch (e) {
+        console.warn("⚠️ Could not fetch project manifest for context:", e.message);
+      }
 
       if (filesToAnalyze.length === 0) {
         console.warn(
@@ -167,7 +176,8 @@ class AnalysisService {
         const batchIssues = await this.analyzeFilesWithAI(
           filesWithContent,
           repository,
-          remainingQuota
+          remainingQuota,
+          projectManifest
         );
 
         // Append only up to the limit
@@ -201,10 +211,12 @@ class AnalysisService {
       console.log(`✅ Analysis complete! Found ${savedIssues.length} issues`);
 
       // Step 6: Log to audit trail
+      const duration = Math.floor((Date.now() - startTime) / 1000);
       await auditService.logAnalysis(userId, repositoryId, repository, {
         issuesFound: savedIssues.length,
         critical: repository.stats.criticalIssues,
         filesAnalyzed: filesToAnalyze.length,
+        duration: duration,
       });
 
       return {
@@ -371,7 +383,7 @@ class AnalysisService {
     }
   }
 
-  async analyzeFilesWithAI(files, repository, issueLimit = 5) {
+  async analyzeFilesWithAI(files, repository, issueLimit = 5, projectManifest = "") {
     const validFiles = files.filter((f) => f !== null);
     if (validFiles.length === 0) return [];
 
@@ -472,34 +484,25 @@ RULES:
 - Valid JSON only`;
     */
 
-    // NEW OPTIMIZED PROMPTS (Minimizing tokens and respecting limit):
-    const systemPrompt = `Expert Security Researcher & Senior DevOps Engineer. You are tasked with performing a deep technical audit of source code.
-YOUR GOAL: Identify vulnerabilities, logic flaws, API security risks, and technical debt.
-BE CRITICAL: No codebase is perfect. Most have hidden flaws in auth logic, input validation, or dependency usage.
-CATEGORIES:
-1. SECURITY: Auth bypass, SQLi, XSS, SSRF, hardcoded secrets.
-2. API SECURITY: Broken object-level authorization, missing rate limiting, insecure methods.
-3. PEN-TEST: Identify specific attack vectors and explain how a security researcher would test them safely.
-4. DEPENDENCY: High-risk usage of libraries.
-5. CODE QUALITY: Critical bugs only.
+    // NEW OPTIMIZED PROMPTS:
+    const systemPrompt = `Expert Security Auditor. Your goal: Find REAL vulnerabilities and critical logic flaws. 
+    Focus: Auth bypass, SQLi, XSS, API security, and high-impact bugs.
+    Be critical. No codebase is perfect.
+    Reply in STRICT JSON.`;
 
-Reply in STRICT JSON.`;
+    const userPrompt = `Analyze ${repository.repoOwner}/${repository.repoName} (${repository.language || "code"}).
+${projectManifest ? `Context - Dependencies/Manifest:\n${projectManifest}\n\n` : ""}
+Files for this batch:
+${filesContext.map((f, i) => `[FILE ${i+1}] ${f.path}${f.truncated ? " (truncated)" : ""}:\n${f.content}`).join("\n---\n")}
 
-    const userPrompt = `Perform a comprehensive security and quality analysis on ${repository.repoOwner}/${repository.repoName} (${repository.language || "code"}).
-
-Files context:
-${filesContext.map((f, i) => `[${i+1}] ${f.path}${f.truncated ? " (truncated)" : ""}:\n${f.content}`).join("\n---\n")}
-
-TASK: Identify at least 3-5 critical issues if they exist. You MUST be technical and specific.
-Categorize issues into: 'api-security', 'pen-test', 'dependency', 'security', 'bug', 'code-quality'.
-
-Schema: {"issues": [{"title":string,"description":string,"issueType":"security"|"bug"|"api-security"|"pen-test"|"dependency"|"performance"|"code-quality","severity":"CRITICAL"|"HIGH"|"MEDIUM"|"LOW","filePath":string,"lineNumber":number,"codeSnippet":string,"aiConfidence":number,"aiExplanation":string,"suggestedFix":string}]}
+TASK: Identify up to ${Math.min(issueLimit, 5)} high-impact issues.
+Schema: {"issues": [{"title":string,"description":string,"issueType":"security"|"bug"|"api-security"|"pen-test"|"dependency"|"code-quality","severity":"CRITICAL"|"HIGH"|"MEDIUM"|"LOW","filePath":string,"lineNumber":number,"codeSnippet":string,"aiConfidence":number,"aiExplanation":string,"suggestedFix":string}]}
 
 RULES:
-- Find the most impactful issues (Prioritize CRITICAL/HIGH).
-- For 'pen-test' issues, provide a clear technical hypothesis on the vulnerability.
-- DO NOT be conservative. If code looks suspicious, flag it with lower confidence but higher detail.
-- Valid JSON ONLY.`;
+- prioritize CRITICAL/HIGH security flaws.
+- Be technical and specific.
+- Match exact filenames and approximate line numbers.
+- Valid JSON only.`;
 
     try {
       let response;
