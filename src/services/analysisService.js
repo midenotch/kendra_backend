@@ -443,33 +443,34 @@ RULES:
     */
 
     // NEW OPTIMIZED PROMPTS:
-    const systemPrompt = `You are a senior software engineer and code auditor.
-Analyze the provided code and identify:
-- Bugs and logic errors
-- Security vulnerabilities
-- Performance issues
-- Bad practices
+    const systemPrompt = `You are a world-class security auditor and software engineer. Your goal is to find REAL bugs, security flaws, and performance bottlenecks.
+NO CODE IS PERFECT. You are EXPECTED to find at least 3-5 issues per batch of files.
+Be critical, aggressive, and accurate.
 
-Return a JSON object with an "issues" array. Each issue must include:
-- title: concise title
-- description: detailed explanation
-- issueType: "bug", "security", "performance", or "code-quality"
-- severity: "CRITICAL", "HIGH", "MEDIUM", or "LOW"
-- filePath: the file path
-- lineNumber: approximate line number
-- codeSnippet: relevant code
-- aiConfidence: number 0-1
-- aiExplanation: why this is an issue
-- suggestedFix: how to fix it
+Return a JSON object with a top-level "issues" array.
+Each issue must follow this schema:
+{
+  "title": "Clear, concise title",
+  "description": "Specific explanation of why this is a problem",
+  "issueType": "security" | "bug" | "performance" | "code-quality",
+  "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+  "filePath": "the exact file path provided",
+  "lineNumber": number,
+  "codeSnippet": "the relevant code snippet",
+  "aiConfidence": number (0-1),
+  "aiExplanation": "Brief impact analysis",
+  "suggestedFix": "Code example or steps to fix"
+}
 
-STRICT JSON ONLY. No other text.`;
+STRICT JSON ONLY. No preamble or markdown outside the JSON block.`;
 
-    const userPrompt = `Repository: ${repository.repoOwner}/${repository.repoName}
-${projectManifest ? `Context:\n${projectManifest}\n\n` : ""}
-Code to analyze:
-${filesContext.map((f, i) => `### File: ${f.path}\n\`\`\`\n${f.content}\n\`\`\``).join("\n\n")}
+    const userPrompt = `Project Context: ${repository.repoOwner}/${repository.repoName} (${repository.language || "code"})
+${projectManifest ? `Dependencies/Manifest Context:\n${projectManifest}\n\n` : ""}
 
-Find real issues in this code. Return JSON format.`;
+Analyze these files for critical vulnerabilities and bugs:
+${filesContext.map((f, i) => `--- FILE: ${f.path} ---\n${f.content}`).join("\n\n")}
+
+Find at least 3-5 REAL issues. If you find nothing, look harder at input validation, error handling, and security best practices.`;
 
     try {
       let response;
@@ -534,7 +535,8 @@ Find real issues in this code. Return JSON format.`;
       const issues = parsedContent.issues || [];
 
       if (issues.length === 0) {
-        console.warn(`⚠️ ${serviceUsed} returned 0 issues for this batch`);
+        console.warn(`⚠️ ${serviceUsed} returned 0 issues for this batch.`);
+        console.log(`🤖 Raw response preview: ${response.text.substring(0, 500)}`);
         return [];
       }
 

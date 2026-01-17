@@ -227,7 +227,6 @@ class CerebrasService {
         temperature,
         max_tokens: maxTokens,
         response_format: responseFormat,
-        timeout: REQUEST_TIMEOUT_MS,
       });
 
       const text = response?.choices?.[0]?.message?.content ?? '';
