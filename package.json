@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "setup:python": "pip install -r src/python/requirements.txt",
+    "postinstall": "npm run setup:python"
   },
   "keywords": [],
   "author": "",
