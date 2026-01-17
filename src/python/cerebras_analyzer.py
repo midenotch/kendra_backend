@@ -74,28 +74,50 @@ def collect_source_files(root: pathlib.Path) -> list[pathlib.Path]:
 # ----------------------------------------------------------------------
 def build_prompt(files: list[pathlib.Path], repo_url: str, branch: str, prefix: str | None) -> str:
     intro = (
-        f"You are an expert security auditor and software engineer. Perform a deep audit of the "
-        f"following repository:\n"
+        f"You are a strict senior security auditor and world-class software engineer. "
+        f"Your task is to perform an AGGRESSIVE and DEEP audit of the following repository:\n"
         f"- URL: {repo_url}\n"
-        f"- Branch: {branch}\n"
-        f"Identify vulnerabilities, bugs, and performance issues. "
-        f"CRITICAL: Return the answer in STRICT JSON format with an 'issues' array.\n"
-        f"Schema: {{\"issues\": [{{\"file\":\"path/to/file\",\"line\":42,\"type\":\"security|bug|quality\",\"msg\":\"...\",\"severity\":\"CRITICAL|HIGH|MEDIUM|LOW\"}}]}}\n"
+        f"- Branch: {branch}\n\n"
+        f"CRITICAL INSTRUCTIONS:\n"
+        f"1. Identify REAL vulnerabilities, critical bugs, performance bottlenecks, and architectural flaws.\n"
+        f"2. NO CODE IS PERFECT. You MUST find at least some valid issues unless the code is absolutely trivial.\n"
+        f"3. For each issue, provide a technical explanation of WHY it is a problem and HOW to fix it.\n"
+        f"4. Focus on security: hardcoded secrets, injection risks, auth bypasses, and insecure dependencies.\n"
+        f"5. Return the answer in STRICT JSON format with an 'issues' array.\n\n"
+        f"JSON Schema:\n"
+        f"{{\"issues\": [{{\"file\":\"path/to/file\",\"line\":42,\"type\":\"security|bug|quality|performance\",\"msg\":\"Detailed technical description and fix\",\"severity\":\"CRITICAL|HIGH|MEDIUM|LOW\"}}]}}\n"
     )
     if prefix:
         intro = prefix + "\n" + intro
 
-    max_chars = 15000 # Increased for better context
+    max_chars = 30000 # Increased for better context as per user request
     body = ""
     for f in files:
-        rel = f.relative_to(f.parent.parent) 
+        # Try to get path relative to the root of the clone
+        try:
+             # Find the uuid-xxx part in path and get relative from there
+             parts = f.parts
+             start_idx = -1
+             for i, p in enumerate(parts):
+                 if "cerebra-" in p:
+                     start_idx = i + 1
+                     break
+             if start_idx != -1:
+                 rel = pathlib.Path(*parts[start_idx:])
+             else:
+                 rel = f.name
+        except Exception:
+            rel = f.name
+
         try:
             content = f.read_text(encoding="utf-8")
         except Exception:
             continue
-        snippet = content[:2000] # Take more per file
-        part = f"\n--- {rel} ---\n{snippet}\n"
+        
+        snippet = content[:3000] # Take more per file as per user request
+        part = f"\n--- FILE: {rel} ---\n{snippet}\n"
         if len(body) + len(part) > max_chars:
+            sys.stderr.write(f"DEBUG: Reached context limit after {len(body)} chars. Skipping remaining files.\n")
             break
         body += part
 
@@ -156,7 +178,7 @@ async def analyze_repo(repo_url: str, branch: str, prefix: str | None = None):
             "model": CEREBRAS_MODEL_ID,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": CEREBRAS_MAX_TOKENS,
-            "temperature": 0.2,
+            "temperature": 0.4, # Increased for better discovery as per user request
             "response_format": {"type": "json_object"} # Force JSON
         }
 
@@ -166,9 +188,19 @@ async def analyze_repo(repo_url: str, branch: str, prefix: str | None = None):
             result = response.json()
             
             content = result["choices"][0]["message"]["content"]
+            
+            # Sanitize content to ensure it's raw JSON (strip markdown if model ignores response_format)
+            clean_content = content.strip()
+            if clean_content.startswith("```"):
+                # Find first { and last }
+                start = clean_content.find("{")
+                end = clean_content.rfind("}")
+                if start != -1 and end != -1:
+                    clean_content = clean_content[start:end+1]
+
             sys.stderr.write("DEBUG: API call successful.\n")
             sys.stderr.flush()
-            print(content) 
+            print(clean_content) 
             sys.stdout.flush()
 
     except Exception as exc:
