@@ -238,8 +238,8 @@ class CerebrasService {
       
       const isRateLimit = status === 429 || msg.includes('429') || msg.includes('rate limit');
       const isAuthError = status === 401 || status === 400 || msg.includes('expired') || msg.includes('invalid');
-      const isTransient = status >= 500 && status < 600; // 5xx
-      const isNetwork = !err.response && !err.status; // e.g., DNS, timeout
+      const isTransient = status >= 500 && status < 600;
+      const isNetwork = !err.response && !err.status; 
 
       if (isRateLimit || isAuthError) {
         console.warn(`⚠️ Cerebras key #${this.currentKeyIndex + 1} failed: ${err.message}`);
@@ -260,7 +260,7 @@ class CerebrasService {
         throw err;
       }
 
-      const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt); // exponential back‑off
+      const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt);
       console.warn(
         `⚠️ Cerebras request failed (attempt ${attempt + 1}/${MAX_RETRIES}) – ` +
         `status=${status ?? 'N/A'} – retrying in ${delay}ms...`

@@ -5,10 +5,7 @@ const Issue = require("../models/Issue");
 
 const router = express.Router();
 
-/**
- * GET /api/pull-requests
- * Get all pull requests for the user
- */
+
 router.get("/", authMiddleware.verifyToken, async (req, res) => {
   try {
     const { repositoryId, status } = req.query;
@@ -37,10 +34,7 @@ router.get("/", authMiddleware.verifyToken, async (req, res) => {
   }
 });
 
-/**
- * GET /api/pull-requests/:id
- * Get single PR details
- */
+
 router.get("/:id", authMiddleware.verifyToken, async (req, res) => {
   try {
     const pr = await PullRequest.findOne({
@@ -70,10 +64,7 @@ router.get("/:id", authMiddleware.verifyToken, async (req, res) => {
   }
 });
 
-/**
- * GET /api/pull-requests/stats/:repositoryId
- * Get PR statistics for a repository
- */
+
 router.get(
   "/stats/:repositoryId",
   authMiddleware.verifyToken,
@@ -118,5 +109,115 @@ router.get(
     }
   }
 );
+
+
+router.post("/sync", authMiddleware.verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    console.log("🔄 Syncing pull requests for user:", userId);
+
+    const User = require("../models/User");
+    const axios = require("axios");
+
+    
+    const user = await User.findById(userId);
+    if (!user || !user.githubAccessToken) {
+      return res.status(400).json({
+        success: false,
+        error: "GitHub not connected",
+      });
+    }
+
+    
+    const openPRs = await PullRequest.find({
+      userId: userId,
+      status: "open",
+    }).populate("repositoryId");
+
+    console.log(`📋 Found ${openPRs.length} open PRs to check`);
+
+    let updatedCount = 0;
+    const updates = [];
+
+    for (const pr of openPRs) {
+      const repo = pr.repositoryId;
+      if (!repo) continue;
+
+      try {
+        
+        const response = await axios.get(
+          `https://api.github.com/repos/${repo.repoOwner}/${repo.repoName}/pulls/${pr.prNumber}`,
+          {
+            headers: {
+              Authorization: `Bearer ${user.githubAccessToken}`,
+              Accept: "application/vnd.github+json",
+              "User-Agent": "Kendra-AI-DevOps",
+            },
+          }
+        );
+
+        const githubPR = response.data;
+        let newStatus = pr.status;
+
+        
+        if (githubPR.merged) {
+          newStatus = "merged";
+        } else if (githubPR.state === "closed") {
+          newStatus = "closed";
+        }
+
+        
+        if (newStatus !== pr.status) {
+          console.log(
+            `🔄 updating PR #${pr.prNumber} status: ${pr.status} -> ${newStatus}`
+          );
+
+          pr.status = newStatus;
+          
+          await pr.save();
+
+          updates.push({
+            id: pr._id,
+            prNumber: pr.prNumber,
+            oldStatus: "open",
+            newStatus,
+          });
+
+          
+          if (pr.issueId && newStatus === "merged") {
+            await Issue.findByIdAndUpdate(pr.issueId, {
+              status: "resolved",
+              updatedAt: new Date(),
+            });
+            console.log(`✅ Marked linked issue ${pr.issueId} as resolved`);
+          } else if (pr.issueId && newStatus === "closed") {
+            
+            
+            
+          }
+
+          updatedCount++;
+        }
+      } catch (err) {
+        console.error(
+          `❌ Error checking PR #${pr.prNumber}: ${err.message}`
+        );
+      }
+    }
+
+    res.json({
+      success: true,
+      updatedCount,
+      updates,
+      message: `Synced ${openPRs.length} PRs, ${updatedCount} updated`,
+    });
+  } catch (error) {
+    console.error("❌ Sync PRs error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to sync pull requests",
+    });
+  }
+});
 
 module.exports = router;

@@ -20,7 +20,6 @@ router.post(
 
       console.log(`🔍 Analyze request for repository: ${repositoryId}`);
 
-      // Start analysis (this will run in background)
       const result = await analysisService.analyzeRepository(
         repositoryId,
         req.userId

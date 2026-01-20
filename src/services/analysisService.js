@@ -302,7 +302,7 @@ class AnalysisService {
 
         return (priorities[extB] || 0) - (priorities[extA] || 0);
       })
-      .slice(0, 100); // Increased from 50 to 100 files maximum
+      .slice(0, 100); 
   }
 
   /**
