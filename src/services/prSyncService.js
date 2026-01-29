@@ -14,7 +14,7 @@ class PRSyncService {
    * Start periodic sync
    */
   startPeriodicSync() {
-    console.log("🔄 Starting periodic PR status sync...");
+    // console.log("🔄 Starting periodic PR status sync...");
 
     setTimeout(() => this.syncAllOpenPRs(), 60000);
 
